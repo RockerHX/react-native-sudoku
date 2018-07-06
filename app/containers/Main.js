@@ -7,6 +7,8 @@ import {
   StyleSheet,
   AppState,
   Platform,
+  Linking,
+  Share,
   Alert,
   Modal,
   Image,
@@ -16,10 +18,13 @@ import {
 
 import DeviceInfo from 'react-native-device-info';
 import AV from 'leancloud-storage';
+import SplashScreen from 'rn-splash-screen';
 
 import {
   Size,
   CellSize,
+  BoardWidth,
+
   Board,
   Timer,
   Touchable,
@@ -27,6 +32,7 @@ import {
 import {
   Store,
   sudoku,
+  I18n,
 } from '../utils';
 
 const formatTime = Timer.formatTime;
@@ -71,6 +77,7 @@ class Main extends Component {
       showModal: true,
     }, () => {
       this.nextPuzzle = sudoku.makepuzzle();
+      setTimeout(SplashScreen.hide, 300);
     });
     this.granted = await Store.get('granted');
   }
@@ -107,33 +114,33 @@ class Main extends Component {
         <Modal animationType='slide' visible={showModal} transparent={true} onRequestClose={this.onCloseModal} >
           <View style={styles.modal} >
             <View style={[styles.modalContainer, {marginTop: showOnline? -onlineHeight:0}]} >
-              {!showRecord&&<Text style={styles.title} >数      独</Text>}
+              {!showRecord&&<Text style={styles.title} >{I18n.t('name')}</Text>}
               {!showRecord&&<Text style={styles.about} >by Neo(nihgwu@live.com)</Text>}
               <Touchable disabled={disabled} style={styles.button} onPress={this.onResume} >
                 <Image style={[styles.buttonIcon, disabled && styles.disabled]} source={require('../images/play.png')} />
-                <Text style={[styles.buttonText, disabled && styles.disabled]} >继续游戏</Text>
+                <Text style={[styles.buttonText, disabled && styles.disabled]} >{I18n.t('continue')}</Text>
               </Touchable>
               <Touchable disabled={disabled} style={styles.button} onPress={this.onClear} >
                 <Image style={[styles.buttonIcon, disabled && styles.disabled]} source={require('../images/reload.png')} />
-                <Text style={[styles.buttonText, disabled && styles.disabled]} >重新开始</Text>
+                <Text style={[styles.buttonText, disabled && styles.disabled]} >{I18n.t('restart')}</Text>
               </Touchable>
               <Touchable style={styles.button} onPress={this.onCreate} >
                 <Image style={styles.buttonIcon} source={require('../images/shuffle.png')} />
-                <Text style={styles.buttonText} >新的游戏</Text>
+                <Text style={styles.buttonText} >{I18n.t('newgame')}</Text>
               </Touchable>
               <Touchable style={styles.button} onPress={this.onToggleRecord} >
                 <Image style={styles.buttonIcon} source={require('../images/rank.png')} />
-                <Text style={styles.buttonText} >排行榜　</Text>
+                <Text style={styles.buttonText} >{I18n.t('weekrank')}</Text>
               </Touchable>
               <View style={{overflow: 'hidden', height}} >
                 <Touchable style={styles.record} onPress={this.onToggleRecord} >
                   <View style={styles.triangle} />
                   {this.records.length > 0?
                     (this.records.map((item, idx) => <Text key={idx} style={styles.recordText} >{formatTime(item)}</Text>)):
-                    <Text style={styles.recordText} >还没有任何记录</Text>
+                    <Text style={styles.recordText} >{I18n.t('norecord')}</Text>
                   }
                 </Touchable>
-                {showRecord&&<Text style={styles.recordText} onPress={this.onToggleOnline} >在线排行</Text>}
+                {showRecord&&<Text style={styles.recordText} onPress={this.onToggleOnline} >{I18n.t('onlinerank')}</Text>}
               </View>
               <View style={{overflow: 'hidden', height: onlineHeight}} >
                 {!!this.scores && this.scores.length > 0 &&
@@ -145,16 +152,24 @@ class Main extends Component {
                   </Touchable>
                 }
                 {!!this.rank&&
-                  <Text style={styles.recordText} onPress={this.onToggleOnline} >您位于第 {this.rank} 名</Text>
+                  <Text style={styles.recordText} onPress={this.onToggleOnline} >{I18n.t('rank', {rank: this.rank})}</Text>
                 }
               </View>
               {fetching&&
-                <Text style={[styles.recordText, styles.highlightText]} >正在加载中……</Text>
+                <Text style={[styles.recordText, styles.highlightText]} >{I18n.t('loading')}</Text>
               }
             </View>
-            <Touchable style={styles.button} onPress={this.onCloseModal} >
-              <Image style={[styles.buttonIcon, styles.disabled]} source={require('../images/close.png')} />
-            </Touchable>
+            <View style={styles.footer} >
+              <Touchable style={styles.button} onPress={this.onShare} >
+                <Image style={[styles.buttonIcon, styles.disabled]} source={require('../images/share.png')} />
+              </Touchable>
+              <Touchable style={styles.button} onPress={this.onCloseModal} >
+                <Image style={[styles.buttonIcon, styles.disabled]} source={require('../images/close.png')} />
+              </Touchable>
+              <Touchable style={styles.button} onPress={this.onRate} >
+                <Image style={[styles.buttonIcon, styles.disabled]} source={require('../images/rate.png')} />
+              </Touchable>
+            </View>
           </View>
         </Modal>
       </View>
@@ -175,46 +190,45 @@ class Main extends Component {
 
   onErrorMove = () => {
     this.error++;
-    const message = this.error > 3 ? '您已失误超过 3 次了，本次成绩无效' : `您已失误 ${this.error} 次, 超过 3 次成绩将无效`;
-    Alert.alert('这一步之后本题将无解', message, [
-      { text: '知道了' },
-      { text: '新游戏', onPress: this.onCreate },
+    const message = this.error > 3 ? I18n.t('fail') : I18n.t('errormove', {error: this.error});
+    Alert.alert(I18n.t('nosolve'), message, [
+      { text: I18n.t('ok') },
+      { text: I18n.t('newgame'), onPress: this.onCreate },
     ]);
   }
 
-  onFinish = async() => {
+  onFinish = () => {
     this.setState({
       playing: false,
     });
-    await Store.multiRemove('puzzle', 'solve', 'error', 'elapsed');
+    Store.multiRemove('puzzle', 'solve', 'error', 'elapsed');
     this.elapsed = null;
-    //this.error = 0;
     this.solve = null;
     this.fromStore = false;
     const elapsed = this.timer.stop();
     if (this.error > 3) {
       setTimeout(() => {
-        Alert.alert('恭喜您', `成功解决本题\n用时 ${formatTime(elapsed)} \n但您已失误超过 3 次，本次成绩无效`, [
-          { text: '知道了' },
-          { text: '新游戏', onPress: this.onCreate },
+        Alert.alert(I18n.t('congrats'), I18n.t('success') + formatTime(elapsed) + '\n' + I18n.t('fail'), [
+          { text: I18n.t('ok') },
+          { text: I18n.t('newgame'), onPress: this.onCreate },
         ]);
-      }, 1000);
+      }, 2000);
       return;
     }
     if (!this.records.includes(elapsed)) {
       this.records.push(elapsed);
-      this.records.sort();
+      this.records.sort((a, b) => a - b);
       this.records = this.records.slice(0, 5);
       Store.set('records', this.records);
     }
     const length = this.records.length;
     const newRecord = elapsed == this.records[0] && this.records.length > 1;
     setTimeout(() => {
-      Alert.alert('恭喜您', (newRecord ? '新的解题记录' : '成功解决本题') + '\n用时 ' + formatTime(elapsed), [
-        { text: '知道了' },
-        { text: '新游戏', onPress: this.onCreate },
+      Alert.alert(I18n.t('congrats'), (newRecord ? I18n.t('newrecord') : I18n.t('success')) + formatTime(elapsed), [
+        { text: I18n.t('ok') },
+        { text: I18n.t('newgame'), onPress: this.onCreate },
       ]);
-    }, 1000);
+    }, 2000);
   }
 
   onToggleEditing = () => {
@@ -300,13 +314,13 @@ class Main extends Component {
   onToggleOnline = async() => {
     if (!this.granted) {
       const upload = await new Promise((resolve, reject) => {
-        Alert.alert('是否提交成绩？', '您必须先提交自己的最好成绩才能查看在线排行', [{
-          text: '不提交',
+        Alert.alert(I18n.t('uploadrecord'), I18n.t('uploadmessage'), [{
+          text: I18n.t('reject'),
           onPress: () => {
             resolve(false);
           },
         }, {
-          text: '提交',
+          text: I18n.t('grant'),
           onPress: () => {
             resolve(true);
           },
@@ -338,8 +352,8 @@ class Main extends Component {
             this.setState({
               fetching: false,
             });
-            Alert.alert('出错了', '成绩上传失败', [
-              { text: '知道了' },
+            Alert.alert(I18n.t('error'), I18n.t('uploaderror'), [
+              { text: I18n.t('ok') },
             ]);
             return;
           }
@@ -359,8 +373,8 @@ class Main extends Component {
         this.setState({
           fetching: false,
         });
-        Alert.alert('出错了', e.message || '数据查询失败', [
-          { text: '知道了' },
+        Alert.alert(I18n.t('error'), e.message || I18n.t('queryerror'), [
+          { text: I18n.t('ok') },
         ]);
         return;
       }
@@ -399,17 +413,44 @@ class Main extends Component {
       });
     });
   }
+
+  onShare = () => {
+    const url = 'http://a.app.qq.com/o/simple.jsp?pkgname=com.liteneo.sudoku';
+    let message = I18n.t('sharemessage');
+    if (Platform.OS == 'android') message = message + ' \n' + url;
+    Share.share({
+      url,
+      message,
+      title: I18n.t('share'),
+    }, {
+      dialogTitle: I18n.t('share'),
+    }).catch(error => {
+      Alert.alert(I18n.t('sharefailed'));
+    });
+  }
+
+  onRate = () => {
+    const link = Platform.OS == 'android' ?
+      'market://details?id=com.liteneo.sudoku' :
+      'itms-apps://itunes.apple.com/cn/app/id1138612488?mt=8';
+    Alert.alert(I18n.t('rate'), I18n.t('ratemessage'), [
+      { text: I18n.t('cancel') },
+      { text: I18n.t('confirm'), onPress: () => Linking.openURL(link) },
+    ]);
+  }
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'cadetblue',
     paddingBottom: CellSize,
   },
   header: {
-    marginHorizontal: 20,
+    width: BoardWidth,
+    paddingHorizontal: 10,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -453,6 +494,11 @@ const styles = StyleSheet.create({
     color: '#fff',
     opacity: 0.5,
   },
+  footer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+  },
   button: {
     padding: Size.height > 500 ? 20 : 10,
     flexDirection: 'row',
@@ -465,9 +511,9 @@ const styles = StyleSheet.create({
   },
   buttonText: {
     marginLeft: CellSize / 2,
-    textAlign: 'center',
     color: '#fff',
     fontSize: CellSize * 3 / 4,
+    fontFamily: 'Menlo',
   },
   record: {
     backgroundColor: 'cadetblue',
@@ -477,6 +523,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   recordText: {
+    height: CellSize * 4 / 6,
     marginVertical: CellSize / 6,
     textAlign: 'center',
     color: '#fff',
